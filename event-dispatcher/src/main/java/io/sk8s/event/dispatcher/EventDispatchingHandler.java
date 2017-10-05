@@ -180,7 +180,7 @@ public class EventDispatchingHandler implements ApplicationContextAware {
 	private ExtendedConsumerProperties<KafkaConsumerProperties> consumerProperties() {
 		KafkaConsumerProperties kafkaProps = new KafkaConsumerProperties();
 		ExtendedConsumerProperties<KafkaConsumerProperties> extendedProps = new ExtendedConsumerProperties<>(kafkaProps);
-		extendedProps.setHeaderMode(HeaderMode.raw);
+		extendedProps.setHeaderMode(HeaderMode.embeddedHeaders);
 		return extendedProps;
 	}
 }
