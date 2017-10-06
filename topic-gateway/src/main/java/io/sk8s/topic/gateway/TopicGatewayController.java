@@ -19,6 +19,9 @@ package io.sk8s.topic.gateway;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.StandardCharsets;
 
+import javax.servlet.ServletResponse;
+import javax.servlet.http.HttpServletResponse;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageHeaders;
@@ -26,7 +29,9 @@ import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.context.request.async.DeferredResult;
 
 /**
  * @author Mark Fisher
@@ -37,12 +42,24 @@ public class TopicGatewayController {
 	@Autowired
 	private MessagePublisher publisher;
 
-	@PostMapping("/messages/{topic}")
-	public String publishMessage(@PathVariable String topic, @RequestBody String payload) throws UnsupportedEncodingException {
-		Message<byte[]> message = MessageBuilder.withPayload(payload.getBytes(StandardCharsets.UTF_8.name()))
-				.setHeader(MessageHeaders.REPLY_CHANNEL, "foo")
+
+	@PostMapping(value = "/messages/{topic}")
+	public void publishMessage(@PathVariable String topic,
+			@RequestBody String payload,
+			HttpServletResponse response) throws UnsupportedEncodingException {
+		Message<byte[]> msg = MessageBuilder.withPayload(payload.getBytes(StandardCharsets.UTF_8.name()))
 				.build();
-		this.publisher.publishMessage(topic, message);
-		return "message published to topic: " + topic;
+		this.publisher.publishMessage(topic, msg);
+		response.setHeader("Message-Id", msg.getHeaders().getId().toString());
+	}
+
+	@PostMapping(value = "/messages/{topic}", params = "async=false")
+	public DeferredResult<Object> publishMessageAndReply(@PathVariable String topic,
+			@RequestBody String payload) throws UnsupportedEncodingException {
+		Message<byte[]> msg = MessageBuilder.withPayload(payload.getBytes(StandardCharsets.UTF_8.name()))
+				.build();
+		DeferredResult<Object> deferredResult = new DeferredResult<>(10_000L);
+		this.publisher.publishMessageExpectReply(topic, msg, m -> deferredResult.setResult(m.getPayload()));
+		return deferredResult;
 	}
 }

@@ -19,14 +19,19 @@ package io.sk8s.topic.gateway;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
-import org.apache.kafka.common.serialization.StringSerializer;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.core.ConsumerFactory;
+import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.core.ProducerFactory;
@@ -42,8 +47,8 @@ public class TopicGatewayConfiguration {
 	private TopicGatewayProperties properties;
 
 	@Bean
-	public MessagePublisher publisher(KafkaTemplate<String, byte[]> kafkaTemplate) {
-		return new MessagePublisher(kafkaTemplate);
+	public MessagePublisher publisher(KafkaTemplate<String, byte[]> kafkaTemplate, Consumer<String, byte[]> consumer) {
+		return new MessagePublisher(kafkaTemplate, consumer);
 	}
 
 	@Bean
@@ -52,8 +57,26 @@ public class TopicGatewayConfiguration {
 	}
 
 	@Bean
+	public Consumer<String, byte[]> kafkaConsumer(ConsumerFactory<String, byte[]> consumerFactory) {
+		return consumerFactory.createConsumer();
+	}
+
+	@Bean
+	public ConsumerFactory<String, byte[]> consumerFactory() {
+		return new DefaultKafkaConsumerFactory<>(consumerProps());
+	}
+
+	@Bean
 	public ProducerFactory<String, byte[]> producerFactory() {
 		return new DefaultKafkaProducerFactory<>(producerProps());
+	}
+
+	private Map<String, Object> consumerProps() {
+		Map<String, Object> props = new HashMap<>();
+		props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, this.properties.getBrokers());
+		props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class);
+		props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class);
+		return props;
 	}
 
 	private Map<String, Object> producerProps() {

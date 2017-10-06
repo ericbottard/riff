@@ -297,7 +297,8 @@ public class HandlerPool implements Dispatcher, SmartLifecycle {
 			handlerPod.getMetadata().setLabels(functionLabels);
 			pod = this.kubernetesClient.pods().createOrReplace(handlerPod);
 			FunctionSpec functionSpec = functionResource.getSpec();
-			bindOutputChannel(functionName, functionSpec.getOutput());
+			String output = (String) headers.getOrDefault(MessageHeaders.REPLY_CHANNEL, functionSpec.getOutput());
+			bindOutputChannel(functionName, output);
 			try {
 				logger.info("Waiting for service for function {}", functionName);
 				this.serviceLatches.putIfAbsent(functionName, new CountDownLatch(1));
@@ -324,7 +325,7 @@ public class HandlerPool implements Dispatcher, SmartLifecycle {
 			ResponseEntity<String> response = this.restTemplate.postForEntity(baseUrl + "/invoke", payload,
 					String.class);
 			logger.info("Response: " + response);
-			sendResponse(functionName, response.getBody());
+			sendResponse(functionName, response.getBody(), headers);
 		}
 		else {
 			logger.info("failed to retrieve service for function: " + functionName);
@@ -340,9 +341,12 @@ public class HandlerPool implements Dispatcher, SmartLifecycle {
 		this.binder.bindProducer(topic, channel, props);
 	}
 
-	private void sendResponse(String functionName, String payload) {
-		this.outputChannels.get(functionName).send(MessageBuilder.withPayload(payload)
-				.setHeader(MessageHeaders.CONTENT_TYPE, "text/plain").build());
+	private void sendResponse(String functionName, String payload, Map<String, Object> incomingHeaders) {
+		this.outputChannels.get(functionName).send(
+				MessageBuilder.withPayload(payload)
+						.setHeader(MessageHeaders.CONTENT_TYPE, "text/plain")
+						.setCorrelationId(incomingHeaders.get(MessageHeaders.ID))
+						.build());
 	}
 
 	/**

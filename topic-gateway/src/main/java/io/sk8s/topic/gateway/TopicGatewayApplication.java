@@ -17,12 +17,15 @@
 package io.sk8s.topic.gateway;
 
 import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration;
 
 /**
  * @author Mark Fisher
  */
 @SpringBootApplication
+@EnableAutoConfiguration(exclude = KafkaAutoConfiguration.class)
 public class TopicGatewayApplication {
 
 	public static void main(String[] args) {
