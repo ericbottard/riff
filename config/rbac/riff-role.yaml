@@ -10,6 +10,6 @@ rules:
   - apiGroups: ["extensions"]
     resources: ["deployments", "replicasets"]
     verbs: ["get", "list", "watch", "create", "delete", "update", "patch"]
-  - apiGroups: ["extensions.sk8s.io"]
+  - apiGroups: ["projectriff.io"]
     resources: ["functions", "topics"]
     verbs: ["get", "list", "watch"]
