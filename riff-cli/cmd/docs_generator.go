@@ -26,9 +26,6 @@ import (
 	"github.com/spf13/cobra/doc"
 )
 
-var directory string
-var command string
-
 const (
 	riffDocsBase = "https://github.com/projectriff/riff/blob/master/riff-cli/docs"
 )
@@ -47,6 +44,8 @@ func urlPrefixer(base string, command string) func(string) string {
 }
 
 func Docs(rootCmd *cobra.Command) *cobra.Command {
+	var directory string
+	var command string
 
 	var docsCmd = &cobra.Command{
 		Use:    "docs",
@@ -65,20 +64,10 @@ func Docs(rootCmd *cobra.Command) *cobra.Command {
 				return doc.GenMarkdownTree(rootCmd, directory)
 			}
 
-			targetCmd := rootCmd
 			commands := strings.Split(command, " ")
-			for i, nextSubCommand := range commands {
-				var foundCommand *cobra.Command
-				for _, subCommand := range targetCmd.Commands() {
-					if subCommand.Use == nextSubCommand {
-						foundCommand = subCommand
-						break
-					}
-				}
-				if foundCommand == nil {
-					return fmt.Errorf("Unable to find subcommand: %s", commands[0:i+1])
-				}
-				targetCmd = foundCommand
+			targetCmd, _, err := rootCmd.Find(commands)
+			if err != nil {
+				return err
 			}
 
 			prefixer := urlPrefixer(riffDocsBase, strings.Join(commands, "_"))
