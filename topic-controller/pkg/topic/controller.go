@@ -36,9 +36,10 @@ type Controller interface {
 // controller watches the 'topic' custom resource and creates new topics using the provisioner abstraction.
 // it also embeds an http server implementing health probes.
 type controller struct {
-	topicsInformer informersV1.TopicInformer
-	provisioner    provisioner.Provisioner
-	httpServer     *http.Server
+	topicsInformer    informersV1.TopicInformer
+	functionsInformer informersV1.FunctionInformer
+	provisioner       provisioner.Provisioner
+	httpServer        *http.Server
 }
 
 // Run starts the informer watching for topics changes, as well as an http server to answer health probes.
@@ -48,6 +49,7 @@ func (c *controller) Run(stopCh <-chan struct{}) {
 	// Run informer
 	informerStop := make(chan struct{})
 	go c.topicsInformer.Informer().Run(informerStop)
+	go c.functionsInformer.Informer().Run(informerStop)
 
 	// Run http server
 	go func() {
@@ -72,20 +74,47 @@ func (c *controller) Run(stopCh <-chan struct{}) {
 
 // NewController creates a ready to run controller, using the provided informer and provisioner and listening on the
 // given http port
-func NewController(topicsInformer informersV1.TopicInformer, provisioner provisioner.Provisioner, port int) Controller {
+func NewController(topicsInformer informersV1.TopicInformer,
+	functionsInformer informersV1.FunctionInformer,
+	provisioner provisioner.Provisioner,
+	acceptReflector *acceptRelector,
+	port int) Controller {
 
-	ctrl := controller{topicsInformer: topicsInformer, provisioner: provisioner, httpServer: makeHttpServer(port)}
+	ctrl := controller{topicsInformer: topicsInformer, functionsInformer:functionsInformer, provisioner: provisioner, httpServer: makeHttpServer(port)}
 
 	// Set up an event handler for when topic resources are added
 	ctrl.topicsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			t := obj.(*v1.Topic)
-			t = applyDefaults(t)
+			v1.SetObjectDefaults_Topic(t)
 			log.Printf("Adding topic %v with %v partitions", t.Name, *t.Spec.Partitions)
 			err := provisioner.ProvisionProducerDestination(t.Name, int(*t.Spec.Partitions))
 			if err != nil {
 				log.Printf("Failed to add topic %v: %v", t.Name, err)
 			}
+		},
+	})
+
+	ctrl.functionsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:func(obj interface{}) {
+			f := obj.(*v1.Function)
+			v1.SetObjectDefaults_Function(f)
+			acceptReflector.add(f)
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			f1 := newObj.(*v1.Function)
+			v1.SetObjectDefaults_Function(f1)
+			f2 := newObj.(*v1.Function)
+			v1.SetObjectDefaults_Function(f2)
+//			if !reflect.DeepEqual(f1.Status.Accept, f2.Status.Accept) || f1.Spec.Input != f2.Spec.Input {
+				acceptReflector.remove(f1)
+				acceptReflector.add(f2)
+//			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			f := obj.(*v1.Function)
+			v1.SetObjectDefaults_Function(f)
+			acceptReflector.remove(f)
 		},
 	})
 

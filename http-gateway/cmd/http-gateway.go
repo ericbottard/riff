@@ -27,9 +27,19 @@ import (
 	"github.com/bsm/sarama-cluster"
 	"github.com/projectriff/riff/http-gateway/pkg/server"
 	"github.com/projectriff/riff/message-transport/pkg/transport/kafka"
+	"github.com/golang/glog"
+	informersV1 "github.com/projectriff/riff/kubernetes-crds/pkg/client/informers/externalversions/projectriff/v1"
+	"k8s.io/client-go/tools/clientcmd"
+	riffcs "github.com/projectriff/riff/kubernetes-crds/pkg/client/clientset/versioned"
+	informers "github.com/projectriff/riff/kubernetes-crds/pkg/client/informers/externalversions"
+
+	"k8s.io/client-go/rest"
+	"flag"
 )
 
 func main() {
+	kubeconf := flag.String("kubeconf", "", "Path to a kube config. Only required if out-of-cluster.")
+	flag.Parse()
 
 	brokers := brokers()
 	producer, err := kafka.NewProducer(brokers)
@@ -44,7 +54,9 @@ func main() {
 	}
 	defer consumer.Close()
 
-	gw := server.New(8080, producer, consumer, 60*time.Second)
+	topicInformer := makeTopicInformer(kubeconf)
+
+	gw := server.New(8080, producer, consumer, 60*time.Second, topicInformer)
 
 	done := make(chan struct{})
 	gw.Run(done)
@@ -61,3 +73,31 @@ func main() {
 func brokers() []string {
 	return strings.Split(os.Getenv("KAFKA_BROKERS"), ",")
 }
+
+func makeTopicInformer(kubeconf *string) (informersV1.TopicInformer) {
+	riffClient := riffClientSet(kubeconf)
+	riffInformerFactory := informers.NewSharedInformerFactory(riffClient, time.Second*30)
+	topicsInformer := riffInformerFactory.Projectriff().V1().Topics()
+	return topicsInformer
+}
+
+func riffClientSet(kubeconf *string) *riffcs.Clientset {
+	config, err := getClientConfig(*kubeconf)
+	if err != nil {
+		glog.Fatalf("Error getting client config: %s", err.Error())
+	}
+	riffClient, err := riffcs.NewForConfig(config)
+	if err != nil {
+		glog.Fatalf("Error building riff clientset: %s", err.Error())
+	}
+	return riffClient
+}
+
+// return rest config, if path not specified assume in cluster config
+func getClientConfig(kubeconfig string) (*rest.Config, error) {
+	if kubeconfig != "" {
+		return clientcmd.BuildConfigFromFlags("", kubeconfig)
+	}
+	return rest.InClusterConfig()
+}
+

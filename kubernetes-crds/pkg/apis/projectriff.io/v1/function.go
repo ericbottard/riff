@@ -62,6 +62,8 @@ type FunctionSpec struct {
 
 // Status (computed) for a function
 type FunctionStatus struct {
+
+	Accept AcceptedMediaTypes `json:"accept,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

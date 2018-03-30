@@ -25,11 +25,17 @@ import (
 	"io"
 	"context"
 	"github.com/projectriff/riff/message-transport/pkg/message"
+	informersV1 "github.com/projectriff/riff/kubernetes-crds/pkg/client/informers/externalversions/projectriff/v1"
+
+	"github.com/projectriff/riff/kubernetes-crds/pkg/apis/projectriff.io/v1"
+	"k8s.io/client-go/tools/cache"
 )
 
 type Gateway interface {
 	Run(stopCh <-chan struct{})
 }
+
+type topicKey string
 
 type gateway struct {
 	httpServer       *http.Server
@@ -38,6 +44,8 @@ type gateway struct {
 	producer         transport.Producer
 	replies          *repliesMap
 	timeout          time.Duration
+	topicInformer    informersV1.TopicInformer
+	topics           map[topicKey]*v1.Topic
 }
 
 func (g *gateway) Run(stop <-chan struct{}) {
@@ -49,6 +57,7 @@ func (g *gateway) Run(stop <-chan struct{}) {
 	}()
 
 	go g.repliesLoop(stop)
+	go g.topicInformer.Informer().Run(stop)
 }
 
 func (g *gateway) consumeRepliesLoop() {
@@ -101,7 +110,7 @@ func (g *gateway) repliesLoop(stop <-chan struct{}) {
 	}
 }
 
-func New(port int, producer transport.Producer, consumer transport.Consumer, timeout time.Duration) *gateway {
+func New(port int, producer transport.Producer, consumer transport.Consumer, timeout time.Duration, topicInformer informersV1.TopicInformer) *gateway {
 	mux := http.NewServeMux()
 	httpServer := &http.Server{Addr: fmt.Sprintf(":%v", port),
 		Handler: mux,
@@ -113,10 +122,30 @@ func New(port int, producer transport.Producer, consumer transport.Consumer, tim
 		consumerMessages: consumerMessages,
 		replies: newRepliesMap(),
 		timeout: timeout,
+		topics: make(map[topicKey]*v1.Topic),
+		topicInformer: topicInformer,
 	}
 	mux.HandleFunc(messagePath, g.messagesHandler)
 	mux.HandleFunc(requestPath, g.requestsHandler)
 	mux.HandleFunc("/application/status", healthHandler)
+
+	g.topicInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			t := obj.(*v1.Topic)
+			v1.SetObjectDefaults_Topic(t)
+			g.topics[topicKey(t.Name)] = t
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			t := newObj.(*v1.Topic)
+			v1.SetObjectDefaults_Topic(t)
+			g.topics[topicKey(t.Name)] = t
+		},
+		DeleteFunc: func(obj interface{}) {
+			t := obj.(*v1.Topic)
+			v1.SetObjectDefaults_Topic(t)
+			delete(g.topics, topicKey(t.Name))
+		},
+	})
 
 	return &g
 }

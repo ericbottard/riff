@@ -37,6 +37,8 @@ type TopicSpec struct {
 
 // Status (computed) for a topic
 type TopicStatus struct {
+
+	Accept AcceptedMediaTypes `json:"accept,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

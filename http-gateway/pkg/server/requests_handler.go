@@ -23,6 +23,8 @@ import (
 
 	"github.com/projectriff/riff/message-transport/pkg/message"
 	"github.com/satori/go.uuid"
+	"github.com/projectriff/riff/kubernetes-crds/pkg/apis/projectriff.io/v1"
+	"fmt"
 )
 
 const (
@@ -36,11 +38,27 @@ var outgoingHeadersToPropagate = [...]string{ContentType}
 // Function requestHandler is an http handler that sends the http body to the producer, then waits
 // for a message on a go channel it creates for a reply and sends that as an http response.
 func (g *gateway) requestsHandler(w http.ResponseWriter, r *http.Request) {
-	topic, err := parseTopic(r, requestPath)
+	topicName, err := parseTopic(r, requestPath)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+
+	var topic *v1.Topic
+	topic, ok := g.topics[topicKey(topicName)]
+	if !ok {
+		http.Error(w, fmt.Sprintf("Topic %v does not exist", topicName), http.StatusNotFound)
+		return
+	}
+
+	ct := r.Header.Get("Content-Type")
+	contentType := v1.ParseAccept(ct)
+	negotiation := contentType.Intersect(topic.Status.Accept)
+	if len(negotiation) == 0 {
+		http.Error(w, "Unsupported content-type", http.StatusUnsupportedMediaType)
+		return
+	}
+
 
 	b, err := ioutil.ReadAll(r.Body)
 	if err != nil {
@@ -56,7 +74,7 @@ func (g *gateway) requestsHandler(w http.ResponseWriter, r *http.Request) {
 	headers := propagateIncomingHeaders(r)
 	headers[CorrelationId] = []string{correlationId}
 
-	err = g.producer.Send(topic, message.NewMessage(b, headers))
+	err = g.producer.Send(topicName, message.NewMessage(b, headers))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

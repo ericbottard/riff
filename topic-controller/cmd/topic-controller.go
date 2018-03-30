@@ -48,11 +48,13 @@ func main() {
 	kubeconf := flag.String("kubeconf", "", "Path to a kube config. Only required if out-of-cluster.")
 	flag.Parse()
 
-	topicsInformer := makeTopicsInformer(kubeconf)
+	topicsInformer, functionsInformer := makeInformers(kubeconf)
 
 	provisioner := kafka.NewKafkaProvisioner(os.Getenv("KAFKA_ZK_NODES"))
 
-	controller := topic.NewController(topicsInformer, provisioner, 8080)
+	acceptReflector := topic.NewAcceptReflector(riffClientSet(kubeconf))
+
+	controller := topic.NewController(topicsInformer, functionsInformer, provisioner,acceptReflector, 8080)
 	stop := make(chan struct{})
 	controller.Run(stop)
 
@@ -67,7 +69,15 @@ func main() {
 		stop <- struct{}{}
 	}
 }
-func makeTopicsInformer(kubeconf *string) informersV1.TopicInformer {
+func makeInformers(kubeconf *string) (informersV1.TopicInformer, informersV1.FunctionInformer) {
+	riffClient := riffClientSet(kubeconf)
+	riffInformerFactory := informers.NewSharedInformerFactory(riffClient, time.Second*30)
+	topicsInformer := riffInformerFactory.Projectriff().V1().Topics()
+	functionsInformer := riffInformerFactory.Projectriff().V1().Functions()
+	return topicsInformer, functionsInformer
+}
+
+func riffClientSet(kubeconf *string) *riffcs.Clientset {
 	config, err := getClientConfig(*kubeconf)
 	if err != nil {
 		glog.Fatalf("Error getting client config: %s", err.Error())
@@ -76,7 +86,5 @@ func makeTopicsInformer(kubeconf *string) informersV1.TopicInformer {
 	if err != nil {
 		glog.Fatalf("Error building riff clientset: %s", err.Error())
 	}
-	riffInformerFactory := informers.NewSharedInformerFactory(riffClient, time.Second*30)
-	topicsInformer := riffInformerFactory.Projectriff().V1().Topics()
-	return topicsInformer
+	return riffClient
 }
