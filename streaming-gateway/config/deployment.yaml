@@ -1,0 +1,31 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: projectriff-riff-streaming-gateway
+spec:
+  replicas: 1
+  template:
+    metadata:
+      name: streaming-gateway
+      labels:
+        app: riff
+        component: streaming-gateway
+    spec:
+      containers:
+      - image: projectriff/streaming-gateway:0.0.8-snapshot
+        name: streaming-gateway
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          httpGet:
+            path: /application/status
+            port: 8080
+          periodSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /application/status
+            port: 8080
+          periodSeconds: 5
+        env:
+        - name: KAFKA_BROKERS
+          value: projectriff-kafka.riff-system:9092
+      serviceAccountName: projectriff-riff
