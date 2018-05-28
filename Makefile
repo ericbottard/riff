@@ -23,6 +23,7 @@ dockerize:
 	$(MAKE) -C function-sidecar		dockerize
 	$(MAKE) -C http-gateway			dockerize
 	$(MAKE) -C topic-controller		dockerize
+	$(MAKE) -C streaming-gateway	dockerize
 
 debug-dockerize:
 	$(MAKE) -C function-controller	debug-dockerize
@@ -39,6 +40,7 @@ dev-setup:
 	$(MAKE) -C function-controller	kubectl-apply
 	$(MAKE) -C http-gateway			kubectl-apply
 	$(MAKE) -C topic-controller		kubectl-apply
+	$(MAKE) -C streaming-gateway	kubectl-apply
 
 teardown:
 	kubectl delete all -l function

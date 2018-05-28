@@ -3,7 +3,6 @@
 
 !function-controller/cmd
 !function-controller/pkg
-!function-controller/tmp
 
 !function-sidecar/cmd
 !function-sidecar/pkg
@@ -11,9 +10,11 @@
 !http-gateway/cmd
 !http-gateway/pkg
 
+!streaming-gateway/cmd
+!streaming-gateway/pkg
+
 !topic-controller/cmd
 !topic-controller/pkg
-!topic-controller/tmp
 
 !message-transport
 !kubernetes-crds
