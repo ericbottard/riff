@@ -50,3 +50,6 @@ type Inspector interface {
 	// QueueLength returns the queue length of the given topic from the perspective of the given function.
 	QueueLength(topic string, function string) (int64, error)
 }
+
+// ConsumerFactory is a function able to return a new consumer for the given topic and consumer group.
+type ConsumerFactory func(topic string, group string) Consumer

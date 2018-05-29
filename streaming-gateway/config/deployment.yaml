@@ -15,16 +15,16 @@ spec:
       - image: projectriff/streaming-gateway:0.0.8-snapshot
         name: streaming-gateway
         imagePullPolicy: IfNotPresent
-        livenessProbe:
-          httpGet:
-            path: /application/status
-            port: 8080
-          periodSeconds: 5
-        readinessProbe:
-          httpGet:
-            path: /application/status
-            port: 8080
-          periodSeconds: 5
+#        livenessProbe:
+#          httpGet:
+#            path: /application/status
+#            port: 8080
+#          periodSeconds: 5
+#        readinessProbe:
+#          httpGet:
+#            path: /application/status
+#            port: 8080
+#          periodSeconds: 5
         env:
         - name: KAFKA_BROKERS
           value: projectriff-kafka.riff-system:9092

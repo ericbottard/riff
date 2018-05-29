@@ -38,6 +38,10 @@ import (
 	riffscheme "github.com/projectriff/riff/kubernetes-crds/pkg/client/clientset/versioned/scheme"
 	informers "github.com/projectriff/riff/kubernetes-crds/pkg/client/informers/externalversions/projectriff.io/v1alpha1"
 	listers "github.com/projectriff/riff/kubernetes-crds/pkg/client/listers/projectriff.io/v1alpha1"
+	"log"
+	"github.com/projectriff/riff/message-transport/pkg/transport"
+	"github.com/projectriff/riff/function-sidecar/pkg/carrier"
+	"github.com/projectriff/riff/function-sidecar/pkg/dispatcher/grpc"
 )
 
 const controllerAgentName = "stream-gateway-controller"
@@ -76,13 +80,25 @@ type ctrl struct {
 	// recorder is an event recorder for recording Event resources to the
 	// Kubernetes API.
 	recorder record.EventRecorder
+
+	consumerFactory transport.ConsumerFactory
+	producer        transport.Producer
+	carriers        map[string]*registration
+}
+
+type registration struct {
+	producer transport.Producer
+	consumer transport.Consumer
 }
 
 // NewController returns a new sample controller
 func NewController(
 	kubeclientset kubernetes.Interface,
 	riffclientset clientset.Interface,
-	linkInformer informers.LinkInformer) *ctrl {
+	linkInformer informers.LinkInformer,
+	consumerFactory transport.ConsumerFactory,
+	producer transport.Producer,
+) *ctrl {
 
 	// Create event broadcaster
 	// Add sample-controller types to the default Kubernetes Scheme so Events can be
@@ -91,16 +107,19 @@ func NewController(
 	glog.V(4).Info("Creating event broadcaster")
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
-	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeclientset.CoreV1().Events("")})
+	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeclientset.CoreV1().Events("default")})
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerAgentName})
 
 	controller := &ctrl{
-		kubeclientset: kubeclientset,
-		riffclientset: riffclientset,
-		linksLister:   linkInformer.Lister(),
-		linksSynced:   linkInformer.Informer().HasSynced,
-		workqueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Links"),
-		recorder:      recorder,
+		kubeclientset:   kubeclientset,
+		riffclientset:   riffclientset,
+		linksLister:     linkInformer.Lister(),
+		linksSynced:     linkInformer.Informer().HasSynced,
+		workqueue:       workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Links"),
+		recorder:        recorder,
+		consumerFactory: consumerFactory,
+		producer:        producer,
+		carriers:        make(map[string]*registration),
 	}
 
 	glog.Info("Setting up event handlers")
@@ -211,6 +230,7 @@ func (c *ctrl) processNextWorkItem() bool {
 // with the current status of the resource.
 func (c *ctrl) syncHandler(key string) error {
 	// Convert the namespace/name string into a distinct namespace and name
+	log.Printf("And again %v\n", key)
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		runtime.HandleError(fmt.Errorf("invalid resource key: %s", key))
@@ -231,7 +251,17 @@ func (c *ctrl) syncHandler(key string) error {
 		return err
 	}
 
-	c.recorder.Event(link, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
+	if reg, ok := c.carriers[key] ; !ok {
+		consumer := c.consumerFactory(link.Spec.Input, key)
+		dispatcher, err := grpc.NewGrpcDispatcher("localhost", 80, 1*time.Second) // TODO: use svc. TODO: use link.fn.protocol
+		if err == nil {
+			carrier.Run(consumer, c.producer, dispatcher, link.Spec.Output)           // this spawns 2 goroutines
+			c.carriers[key] = &registration{c.producer, consumer}
+
+			c.recorder.Event(link, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
+		}
+		_ = reg
+	}
 	return nil
 }
 
