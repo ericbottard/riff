@@ -24,6 +24,9 @@ dockerize: .dockerize
 .dockerize: $(GO_SOURCES) ../vendor
 	docker build .. --build-arg COMPONENT=$(COMPONENT) -t projectriff/$(COMPONENT):$(TAG) && touch .dockerize
 
+debug-dockerize: $(GO_SOURCES) ../vendor
+	docker build .. --build-arg COMPONENT=$(COMPONENT) -t projectriff/$(COMPONENT):$(TAG) -f ../Dockerfile-debug
+
 ../vendor: ../glide.lock
 	cd .. && glide install -v --force
 

@@ -52,4 +52,4 @@ type Inspector interface {
 }
 
 // ConsumerFactory is a function able to return a new consumer for the given topic and consumer group.
-type ConsumerFactory func(topic string, group string) Consumer
+type ConsumerFactory func(topic string, group string) (Consumer, error)

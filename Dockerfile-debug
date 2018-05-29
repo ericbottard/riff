@@ -7,6 +7,9 @@ COPY vendor/ vendor/
 COPY kubernetes-crds/ kubernetes-crds/
 COPY message-transport/ message-transport/
 
+#To cope with streaming-gateway -> function-sidecar dependency
+COPY function-sidecar/ function-sidecar/
+
 ARG COMPONENT
 COPY ${COMPONENT}/cmd/ ${COMPONENT}/cmd/
 COPY ${COMPONENT}/pkg/ ${COMPONENT}/pkg/

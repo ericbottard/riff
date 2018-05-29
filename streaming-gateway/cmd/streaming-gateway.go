@@ -31,6 +31,10 @@ import (
 	informers "github.com/projectriff/riff/kubernetes-crds/pkg/client/informers/externalversions"
 	"github.com/projectriff/riff/streaming-gateway/pkg/signals"
 	"github.com/projectriff/riff/streaming-gateway/pkg/controller"
+	"github.com/projectriff/riff/message-transport/pkg/transport/kafka"
+	"github.com/projectriff/riff/message-transport/pkg/transport"
+	"github.com/bsm/sarama-cluster"
+	"github.com/Shopify/sarama"
 )
 
 func main() {
@@ -63,9 +67,24 @@ func main() {
 	kubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeClient, time.Second*30)
 	riffInformerFactory := informers.NewSharedInformerFactory(exampleClient, time.Second*30)
 
+
+
+	consumerConfig := makeConsumerConfig()
+	consumerConfig.Consumer.Offsets.Initial = sarama.OffsetOldest
+
+	consumerFactory := func(topic string, group string) (transport.Consumer, error) {
+		return kafka.NewConsumer(brokers, group, []string{topic}, consumerConfig)
+	}
+	producer, err := kafka.NewProducer(brokers)
+	if err != nil {
+		panic(err)
+	}
+
 	controller := controller.NewController(kubeClient,
 		exampleClient,
 		riffInformerFactory.Projectriff().V1alpha1().Links(),
+		consumerFactory,
+		producer,
 	)
 
 	go kubeInformerFactory.Start(stopCh)
@@ -75,4 +94,11 @@ func main() {
 		glog.Fatalf("Error running controller: %s", err.Error())
 	}
 
+}
+
+func makeConsumerConfig() *cluster.Config {
+	consumerConfig := cluster.NewConfig()
+	consumerConfig.Consumer.Return.Errors = true
+	consumerConfig.Group.Return.Notifications = true
+	return consumerConfig
 }

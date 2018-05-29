@@ -42,6 +42,7 @@ import (
 	"github.com/projectriff/riff/message-transport/pkg/transport"
 	"github.com/projectriff/riff/function-sidecar/pkg/carrier"
 	"github.com/projectriff/riff/function-sidecar/pkg/dispatcher/grpc"
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const controllerAgentName = "stream-gateway-controller"
@@ -251,16 +252,41 @@ func (c *ctrl) syncHandler(key string) error {
 		return err
 	}
 
-	if reg, ok := c.carriers[key] ; !ok {
-		consumer := c.consumerFactory(link.Spec.Input, key)
-		dispatcher, err := grpc.NewGrpcDispatcher("localhost", 80, 1*time.Second) // TODO: use svc. TODO: use link.fn.protocol
-		if err == nil {
-			carrier.Run(consumer, c.producer, dispatcher, link.Spec.Output)           // this spawns 2 goroutines
-			c.carriers[key] = &registration{c.producer, consumer}
+	if reg, ok := c.carriers[key]; !ok {
+		consumer, err := c.consumerFactory(link.Spec.Input, key)
+		if err != nil {
+			log.Printf("Error creating consumer %v", err)
+		} else {
 
-			c.recorder.Event(link, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
+			service, err := c.kubeclientset.CoreV1().Services(namespace).Get(name, v1.GetOptions{})
+			if errors.IsNotFound(err) {
+				//service = &corev1.Service{Spec:corev1.ServiceSpec{Selector:link.Labels, Ports:[]corev1.ServicePort{Name:}}}
+				//service, err = c.kubeclientset.CoreV1().Services(namespace).Create(service)
+			}
+			if err != nil {
+					log.Printf("Error looking up service %v", err)
+
+			} else {
+				port := -1
+				for _, p := range service.Spec.Ports {
+					if p.Name == "grpc" {
+						port = int(p.Port)
+						break
+					}
+				}
+				hostname := fmt.Sprintf("%s.%s", name, namespace)
+				dispatcher, err := grpc.NewGrpcDispatcher(hostname, port, 1*time.Second) // TODO: use svc. TODO: use link.fn.protocol
+				if err != nil {
+					log.Printf("Error creating dispatcher %v", err)
+				} else {
+					carrier.Run(consumer, c.producer, dispatcher, link.Spec.Output) // this spawns 2 goroutines
+					c.carriers[key] = &registration{c.producer, consumer}
+
+					c.recorder.Event(link, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
+				}
+			}
+			_ = reg
 		}
-		_ = reg
 	}
 	return nil
 }
