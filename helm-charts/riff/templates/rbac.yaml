@@ -10,7 +10,7 @@ metadata:
     heritage: "{{ .Release.Service }}"
 rules:
   - apiGroups: [""]
-    resources: ["services"]
+    resources: ["services","events"]
     verbs: ["get", "list", "watch", "create", "delete", "update"]
   - apiGroups: ["extensions"]
     resources: ["deployments"]

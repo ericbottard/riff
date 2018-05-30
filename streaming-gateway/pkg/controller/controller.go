@@ -231,7 +231,6 @@ func (c *ctrl) processNextWorkItem() bool {
 // with the current status of the resource.
 func (c *ctrl) syncHandler(key string) error {
 	// Convert the namespace/name string into a distinct namespace and name
-	log.Printf("And again %v\n", key)
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		runtime.HandleError(fmt.Errorf("invalid resource key: %s", key))
@@ -264,7 +263,7 @@ func (c *ctrl) syncHandler(key string) error {
 				//service, err = c.kubeclientset.CoreV1().Services(namespace).Create(service)
 			}
 			if err != nil {
-					log.Printf("Error looking up service %v", err)
+					log.Printf("Error looking up service: %v", err)
 
 			} else {
 				port := -1
@@ -275,11 +274,16 @@ func (c *ctrl) syncHandler(key string) error {
 					}
 				}
 				hostname := fmt.Sprintf("%s.%s", name, namespace)
-				dispatcher, err := grpc.NewGrpcDispatcher(hostname, port, 1*time.Second) // TODO: use svc. TODO: use link.fn.protocol
+				log.Printf("Creating dispatcher to %v:%v", hostname, port)
+				dispatcher, err := grpc.NewGrpcDispatcher(hostname, port, 1*time.Second) //TODO: use link.fn.protocol
 				if err != nil {
-					log.Printf("Error creating dispatcher %v", err)
+					log.Printf("Error creating dispatcher: %v", err)
 				} else {
-					carrier.Run(consumer, c.producer, dispatcher, link.Spec.Output) // this spawns 2 goroutines
+					output := link.Spec.Output
+					if output == "" {
+						output = "replies"
+					}
+					carrier.Run(consumer, c.producer, dispatcher, output) // this spawns 2 goroutines
 					c.carriers[key] = &registration{c.producer, consumer}
 
 					c.recorder.Event(link, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
