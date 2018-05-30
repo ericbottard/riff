@@ -8,6 +8,7 @@ build:
 	$(MAKE) -C function-sidecar		build
 	$(MAKE) -C http-gateway			build
 	$(MAKE) -C topic-controller		build
+	$(MAKE) -C streaming-gateway	build
 	$(MAKE) -C riff-cli				build
 
 test:
@@ -16,6 +17,7 @@ test:
 	$(MAKE) -C function-sidecar		test
 	$(MAKE) -C http-gateway			test
 	$(MAKE) -C topic-controller		test
+	$(MAKE) -C streaming-gateway	test
 	$(MAKE) -C riff-cli				test
 
 dockerize:
@@ -30,6 +32,7 @@ debug-dockerize:
 	$(MAKE) -C function-sidecar		debug-dockerize
 	$(MAKE) -C http-gateway			debug-dockerize
 	$(MAKE) -C topic-controller		debug-dockerize
+	$(MAKE) -C streaming-gateway	debug-dockerize
 
 dev-setup:
 	kubectl apply -f config/namespace
@@ -68,4 +71,5 @@ clean:
 	$(MAKE) -C function-sidecar		clean
 	$(MAKE) -C http-gateway			clean
 	$(MAKE) -C topic-controller		clean
+	$(MAKE) -C streaming-gateway	clean
 	$(MAKE) -C riff-cli				clean
