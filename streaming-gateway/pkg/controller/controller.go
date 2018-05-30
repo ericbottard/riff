@@ -275,7 +275,7 @@ func (c *ctrl) syncHandler(key string) error {
 				}
 				hostname := fmt.Sprintf("%s.%s", name, namespace)
 				log.Printf("Creating dispatcher to %v:%v", hostname, port)
-				dispatcher, err := grpc.NewGrpcDispatcher(hostname, port, 1*time.Second) //TODO: use link.fn.protocol
+				dispatcher, err := grpc.NewGrpcDispatcher(hostname, port, link.Spec.Windowing, 1*time.Second) //TODO: use link.fn.protocol
 				if err != nil {
 					log.Printf("Error creating dispatcher: %v", err)
 				} else {
