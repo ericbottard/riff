@@ -31,10 +31,11 @@ import (
 	informers "github.com/projectriff/riff/kubernetes-crds/pkg/client/informers/externalversions"
 	"github.com/projectriff/riff/streaming-gateway/pkg/signals"
 	"github.com/projectriff/riff/streaming-gateway/pkg/controller"
-	"github.com/projectriff/riff/message-transport/pkg/transport/kafka"
 	"github.com/projectriff/riff/message-transport/pkg/transport"
 	"github.com/bsm/sarama-cluster"
 	"github.com/Shopify/sarama"
+	"github.com/projectriff/riff/message-transport/pkg/transport/metrics/kafka_over_kafka"
+	"github.com/satori/go.uuid"
 )
 
 func main() {
@@ -72,10 +73,11 @@ func main() {
 	consumerConfig := makeConsumerConfig()
 	consumerConfig.Consumer.Offsets.Initial = sarama.OffsetOldest
 
+	pod := uuid.NewV4().String()
 	consumerFactory := func(topic string, group string) (transport.Consumer, error) {
-		return kafka.NewConsumer(brokers, group, []string{topic}, consumerConfig)
+		return kafka_over_kafka.NewMetricsEmittingConsumer(brokers, group, pod, []string{topic}, consumerConfig)
 	}
-	producer, err := kafka.NewProducer(brokers)
+	producer, err := kafka_over_kafka.NewMetricsEmittingProducer(brokers, uuid.NewV4().String())
 	if err != nil {
 		panic(err)
 	}
