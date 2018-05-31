@@ -36,13 +36,18 @@ import (
 	riffv1alpha1 "github.com/projectriff/riff/kubernetes-crds/pkg/apis/projectriff.io/v1alpha1"
 	clientset "github.com/projectriff/riff/kubernetes-crds/pkg/client/clientset/versioned"
 	riffscheme "github.com/projectriff/riff/kubernetes-crds/pkg/client/clientset/versioned/scheme"
-	informers "github.com/projectriff/riff/kubernetes-crds/pkg/client/informers/externalversions/projectriff.io/v1alpha1"
-	listers "github.com/projectriff/riff/kubernetes-crds/pkg/client/listers/projectriff.io/v1alpha1"
 	"log"
 	"github.com/projectriff/riff/message-transport/pkg/transport"
 	"github.com/projectriff/riff/function-sidecar/pkg/carrier"
 	"github.com/projectriff/riff/function-sidecar/pkg/dispatcher/grpc"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	informers "k8s.io/client-go/informers/core/v1"
+	listers "k8s.io/client-go/listers/core/v1"
+	"github.com/projectriff/riff/kubernetes-crds/pkg/client/listers/projectriff.io/v1alpha1"
+	v1alpha12 "github.com/projectriff/riff/kubernetes-crds/pkg/client/informers/externalversions/projectriff.io/v1alpha1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"io"
+	"github.com/projectriff/riff/function-sidecar/pkg/dispatcher"
 )
 
 const controllerAgentName = "stream-gateway-controller"
@@ -50,13 +55,6 @@ const controllerAgentName = "stream-gateway-controller"
 const (
 	// SuccessSynced is used as part of the Event 'reason' when a Foo is synced
 	SuccessSynced = "Synced"
-	// ErrResourceExists is used as part of the Event 'reason' when a Foo fails
-	// to sync due to a Deployment of the same name already existing.
-	ErrResourceExists = "ErrResourceExists"
-
-	// MessageResourceExists is the message used for Events when a resource
-	// fails to sync due to a Deployment already existing
-	MessageResourceExists = "Resource %q already exists and is not managed by Foo"
 	// MessageResourceSynced is the message used for an Event fired when a Foo
 	// is synced successfully
 	MessageResourceSynced = "Foo synced successfully"
@@ -69,8 +67,10 @@ type ctrl struct {
 	// sampleclientset is a clientset for our own API group
 	riffclientset clientset.Interface
 
-	linksLister listers.LinkLister
-	linksSynced cache.InformerSynced
+	endpointsLister listers.EndpointsLister
+	endpointsSynced cache.InformerSynced
+
+	linksLister v1alpha1.LinkLister
 
 	// workqueue is a rate limited work queue. This is used to queue work to be
 	// processed instead of performing it as soon as a change happens. This
@@ -90,13 +90,15 @@ type ctrl struct {
 type registration struct {
 	producer transport.Producer
 	consumer transport.Consumer
+	dispatcher dispatcher.Dispatcher
 }
 
 // NewController returns a new sample controller
 func NewController(
 	kubeclientset kubernetes.Interface,
 	riffclientset clientset.Interface,
-	linkInformer informers.LinkInformer,
+	endpointsInformer informers.EndpointsInformer,
+	linksInformer v1alpha12.LinkInformer,
 	consumerFactory transport.ConsumerFactory,
 	producer transport.Producer,
 ) *ctrl {
@@ -108,15 +110,16 @@ func NewController(
 	glog.V(4).Info("Creating event broadcaster")
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
-	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeclientset.CoreV1().Events("default")})
+	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: kubeclientset.CoreV1().Events("")})
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerAgentName})
 
 	controller := &ctrl{
 		kubeclientset:   kubeclientset,
 		riffclientset:   riffclientset,
-		linksLister:     linkInformer.Lister(),
-		linksSynced:     linkInformer.Informer().HasSynced,
-		workqueue:       workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Links"),
+		endpointsLister: endpointsInformer.Lister(),
+		endpointsSynced: endpointsInformer.Informer().HasSynced,
+		linksLister:     linksInformer.Lister(),
+		workqueue:       workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "Endpoints"),
 		recorder:        recorder,
 		consumerFactory: consumerFactory,
 		producer:        producer,
@@ -125,10 +128,10 @@ func NewController(
 
 	glog.Info("Setting up event handlers")
 	// Set up an event handler for when Link resources change
-	linkInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: controller.enqueueLink,
+	endpointsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: controller.enqueueEndpoint,
 		UpdateFunc: func(old, new interface{}) {
-			controller.enqueueLink(new)
+			controller.enqueueEndpoint(new)
 		},
 	})
 
@@ -148,7 +151,7 @@ func (c *ctrl) Run(threadiness int, stopCh <-chan struct{}) error {
 
 	// Wait for the caches to be synced before starting workers
 	glog.Info("Waiting for informer caches to sync")
-	if ok := cache.WaitForCacheSync(stopCh, c.linksSynced); !ok {
+	if ok := cache.WaitForCacheSync(stopCh, c.endpointsSynced); !ok {
 		return fmt.Errorf("failed to wait for caches to sync")
 	}
 
@@ -207,7 +210,7 @@ func (c *ctrl) processNextWorkItem() bool {
 			return nil
 		}
 		// Run the syncHandler, passing it the namespace/name string of the
-		// Link resource to be synced.
+		// Endpoint resource to be synced.
 		if err := c.syncHandler(key); err != nil {
 			return fmt.Errorf("error syncing '%s': %s", key, err.Error())
 		}
@@ -230,6 +233,7 @@ func (c *ctrl) processNextWorkItem() bool {
 // converge the two. It then updates the Status block of the Foo resource
 // with the current status of the resource.
 func (c *ctrl) syncHandler(key string) error {
+	log.Printf("Looking at %v\n", key)
 	// Convert the namespace/name string into a distinct namespace and name
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
@@ -237,10 +241,10 @@ func (c *ctrl) syncHandler(key string) error {
 		return nil
 	}
 
-	// Get the Link resource with this namespace/name
-	link, err := c.linksLister.Links(namespace).Get(name)
+	// Get the Endpoint resource with this namespace/name
+	endpoint, err := c.endpointsLister.Endpoints(namespace).Get(name)
 	if err != nil {
-		// The Link resource may no longer exist, in which case we stop
+		// The Endpoint resource may no longer exist, in which case we stop
 		// processing.
 		if errors.IsNotFound(err) {
 			runtime.HandleError(fmt.Errorf("foo '%s' in work queue no longer exists", key))
@@ -251,19 +255,31 @@ func (c *ctrl) syncHandler(key string) error {
 		return err
 	}
 
-	if reg, ok := c.carriers[key]; !ok {
-		consumer, err := c.consumerFactory(link.Spec.Input, key)
+	ready := false
+	for _, s := range endpoint.Subsets {
+		if len(s.Addresses) > 0 {
+			ready = true
+			break
+		}
+	}
+
+	reg, ok := c.carriers[key]
+	if !ok && !ready {
+		log.Printf("Waiting for endpoint %v to become ready\n", key)
+	} else if !ok && ready {
+		link, err := c.linksLister.Links(namespace).Get(name)
 		if err != nil {
-			log.Printf("Error creating consumer %v", err)
+			// TODO
+			log.Printf("Error getting link: %v\n", err)
+		}
+		consumer, err := c.consumerFactory(link.Spec.Input, /*key*/name)
+		if err != nil {
+			log.Printf("Error creating consumer %v\n", err)
 		} else {
 
 			service, err := c.kubeclientset.CoreV1().Services(namespace).Get(name, v1.GetOptions{})
-			if errors.IsNotFound(err) {
-				//service = &corev1.Service{Spec:corev1.ServiceSpec{Selector:link.Labels, Ports:[]corev1.ServicePort{Name:}}}
-				//service, err = c.kubeclientset.CoreV1().Services(namespace).Create(service)
-			}
 			if err != nil {
-					log.Printf("Error looking up service: %v", err)
+				log.Printf("Error looking up service: %v\n", err)
 
 			} else {
 				port := -1
@@ -274,23 +290,36 @@ func (c *ctrl) syncHandler(key string) error {
 					}
 				}
 				hostname := fmt.Sprintf("%s.%s", name, namespace)
-				log.Printf("Creating dispatcher to %v:%v", hostname, port)
-				dispatcher, err := grpc.NewGrpcDispatcher(hostname, port, link.Spec.Windowing, 1*time.Second) //TODO: use link.fn.protocol
+				log.Printf("Creating dispatcher to %v:%v\n", hostname, port)
+				dispatcher, err := grpc.NewGrpcDispatcher(hostname, port, link.Spec.Windowing, 60*time.Second) //TODO: use link.fn.protocol
 				if err != nil {
-					log.Printf("Error creating dispatcher: %v", err)
+					log.Printf("Error creating dispatcher: %v\n", err)
 				} else {
 					output := link.Spec.Output
 					if output == "" {
 						output = "replies"
 					}
 					carrier.Run(consumer, c.producer, dispatcher, output) // this spawns 2 goroutines
-					c.carriers[key] = &registration{c.producer, consumer}
+					c.carriers[key] = &registration{c.producer, consumer, dispatcher}
 
-					c.recorder.Event(link, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
+					c.recorder.Event(endpoint, corev1.EventTypeNormal, SuccessSynced, MessageResourceSynced)
 				}
 			}
 			_ = reg
 		}
+	} else if ok && !ready {
+		log.Printf("Shutting down %v\n", key)
+		// TODO: shutdown
+		if closer, ok := reg.consumer.(io.Closer); ok {
+			closer.Close()
+		}
+		if closer, ok := reg.dispatcher.(io.Closer); ok {
+			closer.Close()
+		}
+		delete(c.carriers, key)
+		c.recorder.Event(endpoint, corev1.EventTypeNormal, "Not" + SuccessSynced, "Not " + MessageResourceSynced)
+	} else if ok && ready {
+		log.Printf("%v still active, moving on...\n", key)
 	}
 	return nil
 }
@@ -309,14 +338,19 @@ func (c *ctrl) updateLinkStatus(link *riffv1alpha1.Link, deployment *appsv1.Depl
 	return err
 }
 
-// enqueueLink takes a Link resource and converts it into a namespace/name
+// enqueueEndpoint takes a Link resource and converts it into a namespace/name
 // string which is then put onto the work queue. This method should *not* be
 // passed resources of any type other than Link.
-func (c *ctrl) enqueueLink(obj interface{}) {
+func (c *ctrl) enqueueEndpoint(obj interface{}) {
 	var key string
 	var err error
+	a, err := meta.Accessor(obj)
 	if key, err = cache.MetaNamespaceKeyFunc(obj); err != nil {
 		runtime.HandleError(err)
+		return
+	}
+	if _, ok := a.GetLabels()["link"] ; !ok {
+		//log.Printf("Skipping %v: %v\n", key, a.GetLabels())
 		return
 	}
 	c.workqueue.AddRateLimited(key)

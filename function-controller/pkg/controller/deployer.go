@@ -169,6 +169,8 @@ func (d *deployer) buildService(link *v1.Link) corev1.Service {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      link.Name,
 			Namespace: link.Namespace,
+			Labels: map[string]string{"link": link.Name},
+
 			OwnerReferences: []metav1.OwnerReference{
 				*metav1.NewControllerRef(link, v1.SchemeGroupVersion.WithKind("Link")),
 			},

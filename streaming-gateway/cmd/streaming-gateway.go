@@ -84,6 +84,7 @@ func main() {
 
 	controller := controller.NewController(kubeClient,
 		exampleClient,
+		kubeInformerFactory.Core().V1().Endpoints(),
 		riffInformerFactory.Projectriff().V1alpha1().Links(),
 		consumerFactory,
 		producer,

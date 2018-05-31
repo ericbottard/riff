@@ -150,13 +150,17 @@ func (d *grpcDispatcher) handleIncoming() {
 				log.Printf("Keeping stream open       key = %v\n", key)
 			}
 		} else if chosen != 0 && !recvOK {
-			// async notification to close
+			// async notification to close a window
 			selectCase := cases[chosen]
 			cases = append(cases[:chosen], cases[chosen+1:]...)
 			w := select2window[selectCase]
 			log.Printf("Async closing of stream for key = %v", w.key)
 			d.close(w)
 			delete(select2window, selectCase)
+		} else if chosen == 0 && !recvOK {
+			// Request to close the dispatcher itself
+			log.Println("Closing dispatcher")
+			break
 		} else {
 			panic("illegal state")
 		}
@@ -209,6 +213,7 @@ func (d *grpcDispatcher) Close() error {
 			e = err
 		}
 	}
+	close(d.input)
 	return e
 }
 

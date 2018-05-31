@@ -4,7 +4,7 @@ metadata:
   name: projectriff-riff
 rules:
   - apiGroups: [""]
-    resources: ["services", "events"]
+    resources: ["services", "events","endpoints"]
     verbs: ["get", "list", "watch", "create", "delete", "update"]
   - apiGroups: ["extensions"]
     resources: ["deployments"]
