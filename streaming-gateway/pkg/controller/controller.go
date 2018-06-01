@@ -88,8 +88,8 @@ type ctrl struct {
 }
 
 type registration struct {
-	producer transport.Producer
-	consumer transport.Consumer
+	producer   transport.Producer
+	consumer   transport.Consumer
 	dispatcher dispatcher.Dispatcher
 }
 
@@ -131,6 +131,11 @@ func NewController(
 	endpointsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.enqueueEndpoint,
 		UpdateFunc: func(old, new interface{}) {
+			newEndpoints := new.(*corev1.Endpoints)
+			oldEndpoints := old.(*corev1.Endpoints)
+			if newEndpoints.ResourceVersion == oldEndpoints.ResourceVersion {
+				return
+			}
 			controller.enqueueEndpoint(new)
 		},
 	})
@@ -272,7 +277,7 @@ func (c *ctrl) syncHandler(key string) error {
 			// TODO
 			log.Printf("Error getting link: %v\n", err)
 		}
-		consumer, err := c.consumerFactory(link.Spec.Input, /*key*/name)
+		consumer, err := c.consumerFactory(link.Spec.Input, /*key*/ name)
 		if err != nil {
 			log.Printf("Error creating consumer %v\n", err)
 		} else {
@@ -317,7 +322,7 @@ func (c *ctrl) syncHandler(key string) error {
 			closer.Close()
 		}
 		delete(c.carriers, key)
-		c.recorder.Event(endpoint, corev1.EventTypeNormal, "Not" + SuccessSynced, "Not " + MessageResourceSynced)
+		c.recorder.Event(endpoint, corev1.EventTypeNormal, "Not"+SuccessSynced, "Not "+MessageResourceSynced)
 	} else if ok && ready {
 		log.Printf("%v still active, moving on...\n", key)
 	}
@@ -349,7 +354,7 @@ func (c *ctrl) enqueueEndpoint(obj interface{}) {
 		runtime.HandleError(err)
 		return
 	}
-	if _, ok := a.GetLabels()["link"] ; !ok {
+	if _, ok := a.GetLabels()["link"]; !ok {
 		//log.Printf("Skipping %v: %v\n", key, a.GetLabels())
 		return
 	}
