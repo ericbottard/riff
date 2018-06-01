@@ -21,11 +21,11 @@ clean:
 
 dockerize: .dockerize
 
-.dockerize: $(GO_SOURCES) ../vendor
+.dockerize: $(GO_SOURCES) ../vendor ../Dockerfile ../.dockerignore
 	docker build .. --build-arg COMPONENT=$(COMPONENT) -t projectriff/$(COMPONENT):$(TAG) && touch .dockerize
 
-debug-dockerize: $(GO_SOURCES) ../vendor
-	docker build .. --build-arg COMPONENT=$(COMPONENT) -t projectriff/$(COMPONENT):$(TAG) -f ../Dockerfile-debug
+debug-dockerize: $(GO_SOURCES) ../vendor ../Dockerfile-debug ../.dockerignore
+	docker build .. --build-arg COMPONENT=$(COMPONENT) -t projectriff/$(COMPONENT):$(TAG) -f ../Dockerfile-debug && rm .dockerize
 
 ../vendor: ../glide.lock
 	cd .. && glide install -v --force
