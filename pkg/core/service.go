@@ -34,12 +34,8 @@ type ListServiceOptions struct {
 	Namespace string
 }
 
-func (l *ListServiceOptions) GetNamespace() string {
-	return l.Namespace
-}
-
 func (c *client) ListServices(options ListServiceOptions) (*v1alpha1.ServiceList, error) {
-	ns := c.explicitOrConfigNamespace(&options)
+	ns := c.explicitOrConfigNamespace(options.Namespace)
 	return c.serving.ServingV1alpha1().Services(ns).List(meta_v1.ListOptions{})
 }
 
@@ -54,12 +50,8 @@ type CreateOrReviseServiceOptions struct {
 	Wait      bool
 }
 
-func (c *CreateOrReviseServiceOptions) GetNamespace() string {
-	return c.Namespace
-}
-
 func (c *client) CreateService(options CreateOrReviseServiceOptions) (*v1alpha1.Service, error) {
-	ns := c.explicitOrConfigNamespace(&options)
+	ns := c.explicitOrConfigNamespace(options.Namespace)
 
 	s, err := newService(options)
 	if err != nil {
@@ -76,7 +68,7 @@ func (c *client) CreateService(options CreateOrReviseServiceOptions) (*v1alpha1.
 }
 
 func (c *client) ReviseService(options CreateOrReviseServiceOptions) (*v1alpha1.Service, error) {
-	ns := c.explicitOrConfigNamespace(&options)
+	ns := c.explicitOrConfigNamespace(options.Namespace)
 
 	existingSvc, err := c.serving.ServingV1alpha1().Services(ns).Get(options.Name, meta_v1.GetOptions{})
 	if err != nil {
@@ -152,10 +144,6 @@ type ServiceStatusOptions struct {
 	Name      string
 }
 
-func (s *ServiceStatusOptions) GetNamespace() string {
-	return s.Namespace
-}
-
 func (c *client) ServiceStatus(options ServiceStatusOptions) (*v1alpha1.ServiceCondition, error) {
 
 	conds, err := c.ServiceConditions(options)
@@ -174,7 +162,7 @@ func (c *client) ServiceStatus(options ServiceStatusOptions) (*v1alpha1.ServiceC
 
 func (c *client) ServiceConditions(options ServiceStatusOptions) ([]v1alpha1.ServiceCondition, error) {
 
-	s, err := c.service(&options, options.Name)
+	s, err := c.service(options.Namespace, options.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -186,10 +174,6 @@ type ServiceInvokeOptions struct {
 	Name            string
 	ContentTypeText bool
 	ContentTypeJson bool
-}
-
-func (s *ServiceInvokeOptions) GetNamespace() string {
-	return s.Namespace
 }
 
 func (c *client) ServiceCoordinates(options ServiceInvokeOptions) (string, string, error) {
@@ -225,7 +209,7 @@ func (c *client) ServiceCoordinates(options ServiceInvokeOptions) (string, strin
 		}
 	}
 
-	s, err := c.service(&options, options.Name)
+	s, err := c.service(options.Namespace, options.Name)
 	if err != nil {
 		return "", "", err
 	}
@@ -233,8 +217,8 @@ func (c *client) ServiceCoordinates(options ServiceInvokeOptions) (string, strin
 	return ingress, s.Status.Domain, nil
 }
 
-func (c *client) service(namespaced Namespaced, name string) (*v1alpha1.Service, error) {
-	ns := c.explicitOrConfigNamespace(namespaced)
+func (c *client) service(namespace string, name string) (*v1alpha1.Service, error) {
+	ns := c.explicitOrConfigNamespace(namespace)
 	return c.serving.ServingV1alpha1().Services(ns).Get(name, meta_v1.GetOptions{})
 }
 
@@ -243,11 +227,7 @@ type DeleteServiceOptions struct {
 	Name      string
 }
 
-func (d *DeleteServiceOptions) GetNamespace() string {
-	return d.Namespace
-}
-
 func (c *client) DeleteService(options DeleteServiceOptions) error {
-	ns := c.explicitOrConfigNamespace(&options)
+	ns := c.explicitOrConfigNamespace(options.Namespace)
 	return c.serving.ServingV1alpha1().Services(ns).Delete(options.Name, nil)
 }
